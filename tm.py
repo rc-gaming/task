@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
 from tkcalendar import DateEntry
-from datetime import datetime
+import datetime
 import json
 
 class Task:
@@ -9,6 +9,12 @@ class Task:
         self.name = name
         self.priority = priority
         self.due_date = due_date
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "priority": self.priority,
+            "due_date": self.due_date.strftime("%Y-%m-%d")  # Convert datetime to string
+        }
 
 class TaskManagerApp:
     def __init__(self, root):
@@ -37,13 +43,8 @@ class TaskManagerApp:
 
         # Due Date Label and Calendar
         tk.Label(self.root, text="Due Date:").grid(row=2, column=0, sticky="w")
-
-        # Use the validate method for date validation
-        validate_date = (self.root.register(self.validate_date), '%P')
-
         due_date_entry = DateEntry(self.root, textvariable=self.due_date_var, date_pattern="yyyy-mm-dd")
         due_date_entry.grid(row=2, column=1, padx=10, pady=5)
-        due_date_entry.config(validate='key', validatecommand=validate_date)
 
         # Add Task Button
         add_task_button = tk.Button(self.root, text="Add Task", command=self.add_task)
@@ -63,18 +64,10 @@ class TaskManagerApp:
         # Clear Task Button
         clear_task_button = tk.Button(self.root, text="Clear Task", command=self.clear_task)
         clear_task_button.grid(row=5, column=1, padx=10, pady=5, sticky="e")
-
+        
         save_tasks_button = tk.Button(self.root, text="Save Tasks", command=self.save_tasks_to_file)
         save_tasks_button.grid(row=6, column=0, columnspan=2, padx=10, pady=5)
 
-    def validate_date(self, new_value):
-        try:
-            # Try to parse the entered value as a date
-            datetime.strptime(new_value, "%Y-%m-%d")
-            return True
-        except ValueError:
-            # If parsing fails, return False
-            return False
     def add_task(self):
         # Get task details from the entry widgets
         task_name = self.task_name_var.get()
@@ -84,7 +77,20 @@ class TaskManagerApp:
         # Validate task details
         if not task_name or not priority or not due_date:
             messagebox.showwarning("Warning", "Please fill in all task details.")
+            return       
+
+        try:
+            # Parse the due date string into a datetime object
+            due_date = datetime.datetime.strptime(due_date, "%Y-%m-%d")
+
+            # Check if the due date is a future date
+            if due_date < datetime.datetime.now():
+                messagebox.showwarning("Warning", "Due date must be a future date.")
+                return
+        except ValueError:
+            messagebox.showwarning("Warning", "Invalid due date format. Please use yyyy-mm-dd.")
             return
+
 
         # Create a Task object and add it to the task list
         new_task = Task(name=task_name, priority=priority, due_date=due_date)
@@ -96,14 +102,6 @@ class TaskManagerApp:
         # Clear the entry widgets after adding the task
         self.clear_task()
 
-    def update_task_list(self):
-        # Clear existing items in the Treeview
-        for item in self.task_list_treeview.get_children():
-            self.task_list_treeview.delete(item)
-
-        # Populate the Treeview with the current task list
-        for task in self.tasks:
-            self.task_list_treeview.insert("", "end", text=task.name, values=(task.priority, task.due_date))
     def delete_task(self):
         selected_item = self.task_list_treeview.selection()
         if selected_item:
@@ -115,28 +113,45 @@ class TaskManagerApp:
                     break
         self.save_tasks_to_file()
 
-    def save_tasks_to_file(self):
-        with open("tasks.json", "w") as json_file:
-            tasks_data = [{"name": task.name, "priority": task.priority, "due_date": task.due_date} for task in self.tasks]
-            json.dump(tasks_data, json_file)
+    def update_task_list(self):
+    # Clear existing items in the Treeview
+        for item in self.task_list_treeview.get_children():
+            self.task_list_treeview.delete(item)
+                # Populate the Treeview with the current task list
+        for task in self.tasks:
+            self.task_list_treeview.insert("", "end", text=task.name, values=(task.priority, task.due_date))
+
+    def save_tasks_to_file(self):                                                                                                                                                                                                                                                                                    
+        try:
+            with open("tasks.json", "w") as json_file:
+                tasks_data = [task.to_dict() for task in self.tasks]
+                json.dump(tasks_data, json_file)                                                                                                                                                                                                                                                               
+            messagebox.showinfo("Save Successful", "Tasks saved successfully.")
+        except Exception as e:
+            messagebox.showerror("Save Error", f"Error saving tasks: {e}")
+
 
     def load_tasks_from_file(self):
         try:
             with open("tasks.json", "r") as json_file:
                 tasks_data = json.load(json_file)
-                self.tasks = []
+                self.tasks = []  # Move this line inside the try block
 
-            for data in tasks_data:
-                if all(key in data for key in ("name", "priority", "due_date")):
-                    task = Task(data["name"], data["priority"], data["due_date"])
-                    self.tasks.append(task)
+                for data in tasks_data:
+                    if all(key in data for key in ("name", "priority", "due_date")):
+                        task = Task(data["name"], data["priority"], data["due_date"])
+                        self.tasks.append(task)
 
-                    # Populate the Treeview with loaded tasks
-                    self.task_list_treeview.insert("", tk.END, text=task.name, values=(task.priority, task.due_date))
-                else:
-                    print("Skipping incomplete task:", data)
-        except FileNotFoundError:
+                        # Populate the Treeview with loaded tasks
+                        self.task_list_treeview.insert("", tk.END, text=task.name, values=(task.priority, task.due_date))
+                    else:
+                        print("Skipping incomplete task:", data)
+
+                messagebox.showinfo("Load Successful", "Tasks loaded successfully.")
+
+        except (FileNotFoundError, json.JSONDecodeError) as e:
             # If the file doesn't exist, create an empty list of tasks
+            print(f"Error loading tasks from file: {e}")
             self.tasks = []
 
     def clear_task(self):
@@ -147,5 +162,5 @@ class TaskManagerApp:
 if __name__ == "__main__":
     root = tk.Tk()
     app = TaskManagerApp(root)
-    root.configure(bg="#F39C12")  # Set your desired background color
+    root.configure(bg="#FDF5E6")#ECF0F1,#FDF5E6,#E0E0E0,#E6E6FA,#F0FFF0
     root.mainloop()
